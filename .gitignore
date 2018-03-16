@@ -2,3 +2,7 @@
 
 __pycache__/
 *.py[cod]
+
+Untitled.ipynb
+.ipynb_checkpoints/
+korpus_cleaned.txt

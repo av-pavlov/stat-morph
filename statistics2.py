@@ -6,12 +6,12 @@ from collections import defaultdict
 import cmath
 WORD_LEN_COEFF = 1
 THRESHOLD_COEFF = 0.5
-DROP = 2.1
+DROP = 1.5
 DROP_1 = 2
 AFFIX_LEN = 1
 
 
-def main():
+def main(cf):
 
     voc = load_voc()
     words = list(voc.keys())
@@ -26,7 +26,7 @@ def main():
     strie = bz2.BZ2File('trie.json.bz2', 'r').read().decode(encoding='utf-8')
     trie = json.loads(strie)
     del strie
-    print("Безусловные вероятности первых 10 букв:\n========================\n", 
+    print("Безусловные вероятности первых 10 букв:\n========================\n",
         sorted([(letter,nv) for letter,nv in prob.items()], key=itemgetter(1), reverse=True)[:10])
 
     # подсчет условных вероятностей букв
@@ -39,9 +39,9 @@ def main():
 
     # отправной аффикс начинаем строить с информанта имеющего max КФ
     affix=informants[0]
-    affix=extend_right(*affix)
+    affix=extend_right(*affix, cf)
     affix=extend_left(affix, trie, len_search)
-    print("ОТПРАВНОЙ АФФИКС:\n===================")    
+    print("ОТПРАВНОЙ АФФИКС:\n===================")
     print(affix)
 
 
@@ -58,6 +58,7 @@ def load_voc():
     del svoc
     return voc
 
+voc = load_voc()
 
 def build_trie_and_prob(voc):
     #подсчитываем частоты букв и строим дерево оконочаний
@@ -144,7 +145,7 @@ def find_informants(prob, cond_prob, len_search):
     return informants
 
 
-def extend_right(char, pos, cf):
+def extend_right(voc, char, pos, cf):
     if pos == -1:#если информант в последней позиции, то расширять некуда
         return char #возвращаем информант как аффикс
     d = defaultdict(int)
@@ -194,8 +195,21 @@ def extend_left(affix, trie, len_search):
 
     return affix
 
+trie = build_trie_and_prob(voc)
 
-def more():
+def n(a):
+    current_node =trie
+    for char in a[::-1]:
+        current_node = current_node[char]
+    return current_node
+
+def n2(a):
+    current_node =trie
+    for char in a[::-1]:
+        current_node = current_node[char]
+    return current_node
+
+def more(aff_len, voc, affix, average_word_len):
 
 
     #базы первого вида
@@ -243,5 +257,5 @@ def more():
     thres_reduction = 1 / average_word_len
 
 
-if __name__ == '__main__':
-    main()
+   # if __name__ == '__main__':
+#        main()

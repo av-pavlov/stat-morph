@@ -32,6 +32,7 @@ def main():
 
     # подсчет безусловных вероятностей букв
     # trie, prob = build_trie_and_prob(voc)
+
     prob = json.load(open("prob.json", encoding="utf-8"))
     strie = bz2.BZ2File('trie.json.bz2', 'r').read().decode(encoding='utf-8')
     trie = json.loads(strie)
@@ -89,6 +90,24 @@ def build_trie_and_prob(voc):
 
     return trie, prob
 
+def build_prefix_trie(voc):
+    # строим дерево префиксов
+    trie = {'n':0}
+    for w,n in voc.items(): #для каждого слова в списке
+      # переворачиваем слово, читаем слово с конца
+        current_dict = trie
+        trie['n'] += n
+        for letter in w:  # для буквы в слове
+            current_dict = current_dict.setdefault(letter, {'n': 0}) #получить значение из словаря по ключу.
+                                                                     #Автоматически добавляет элемент словаря, если он отсутствует.
+            current_dict['n']+=n
+        current_dict['#'] = n
+
+    total = sum([n for n in prob.values()])#84263863
+    for k,v in prob.items():
+        prob[k] = v/total
+
+    return trie, prob
 
 def build_cond_prob(voc, prob, len_search):
     letters = list(prob.keys())
@@ -226,7 +245,8 @@ def word_dfs(node, ending=''):
   
 # все основы, растущие из данного узла 
 def bases_with_affix(aff):
-    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>1])
+    global prefix_trie
+    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>1 and voc[b+aff]>1 or prefix_trie(b)[]<100])
 
 from bisect import bisect_left
 # суммарная встречаемость основы b с любыми остатками
@@ -253,11 +273,10 @@ def build_ost(bases):
 #affixes - нормальные
 
 
-def fast_alg(bases, specter, freq_bases):
-    global removed_ost
+def fast_alg(bases, specter, freq_bases,step, del_aff):
     max_ost_val=max(specter.values())
     #те пары к в у которых к больше макс
-    inf_zveno={ost: v for ost,v in specter.items() if v > max_ost_val / 2}
+    inf_zveno={ost: v for ost,v in specter.items() if v > max_ost_val * 0.5}
     print("Zveno: ", inf_zveno)
     #дольше нужна сочетаемость с некоторой группой контрольных основ
     #верхнее подмножество баз очередного вида    
@@ -268,7 +287,7 @@ def fast_alg(bases, specter, freq_bases):
     max_freq_cur = max(freq_cur_bases.values())
     print("Max freq: ",max_freq_cur)
     #верхнее подмножество баз очередного вида
-    control_bases=[b for b,freq in freq_cur_bases.items() if freq >= max_freq_cur/2 ]
+    control_bases=[b for b,freq in freq_cur_bases.items() if freq >= max_freq_cur/3 ]
     if len(control_bases)==1:
         lower=[(b, freq)for b,freq in freq_cur_bases.items()if freq<max_freq_cur]
         control_bases.append(max(lower, key=itemgetter(1))[0])
@@ -279,32 +298,30 @@ def fast_alg(bases, specter, freq_bases):
     removed_ost = [ost for ost in inf_zveno if ost not in keep_ost]  
     
     print("Keep:", keep_ost)
-    #destiny_of_affix(false_affixes,next_bases,voc)
-    print("!!!!!!!!!!!Removed odt:", removed_ost)
+    next_bases = [b for b in bases if all([b+aff in voc for aff in keep_ost]) and
+                                             freq_cur_bases[b]>step]
+    if removed_ost:
+        del_aff += destiny_of_affix(removed_ost, next_bases,voc)
+        for x in del_aff:
+            del specter[x]
+
+    print("!!!!!!!!!!!Removed ost:", removed_ost)
     return keep_ost
 
-def destiny_of_affix(removed_ost, specter, next_bases, voc):
+def destiny_of_affix(removed_ost, next_bases, voc):
     #проверка на меру децентрации
     #если >=1/2 синтагматической вероятности падает на парадигматически малую(0,1) часть баз - то аффикс искл из парадигмы до конца рассм
     #иначе - аффикс выводится из звена, но сохраняется в спектре остатков
-    aff_sochet=defaultdict(int),
-    sintagm_removed_aff=defaultdict(int)
+    removed_aff=[]
     for aff in removed_ost:
-        for base in next_bases:
-            if aff+base in voc.items():
-                aff_sochet[aff]+=1
-        #freq = 0
-    for aff in removed_ost:
-        for w in words[bisect_left(words),aff:]:
-            if not w.endswith(aff): break
-            sintagm_removed_aff[aff] += voc[w]
-    len_next_bases= len(next_bases)
-    zv = [aff for aff,freq in sintagm_removed_aff.items() if 1/2*freq>=0.1*len(next_bases)]
-    #if
-    #проверка сочетаемости синтагматической аероятности аффикса с количеством оставшихся после групповой редукции баз, принимающих данный аффикс
+        freq_b=sorted([(base, voc.get(base+aff,0)) for base in next_bases], key = itemgetter(1), reverse = True)
+        L = len(freq_b)//10
+        S = sum(map(itemgetter(1),freq_b))
+        if sum(map(itemgetter(1),freq_b[:L])) >= 1/2*S:
+            removed_aff.append(aff)
+    return removed_aff
 
-    specter.append(affix)
-    return sintagm_removed_aff
+    #проверка сочетаемости синтагматической аероятности аффикса с количеством оставшихся после групповой редукции баз, принимающих данный аффикс
 
 
 def direct_alg(bases, specter, false_affixes):
@@ -387,8 +404,11 @@ def build_class(bootstrap_affix):
                 break
         else:
             print("Ускоренный ХОД!!!!!!!!")
-            next_affixes = fast_alg(bases[-1], specter[-1], freq_bases)
-
+            del_aff=[]
+            next_affixes = fast_alg(bases[-1], specter[-1], freq_bases, step, del_aff)
+            if not next_affixes:
+                fast = False
+                continue
 
         #основы следующего вида
         next_bases = [b for b in bases[-1] if all([b+aff in voc for aff in next_affixes]) and
@@ -401,7 +421,6 @@ def build_class(bootstrap_affix):
         # Мера редукции
         # доля основ текущего вида, не принимающих остатки следующего вида
         N = len(bases[-1])
-        print("K: ", K)
         reduction = (N - len(next_bases)) / (K * N)
         print("Мера редукции: ", reduction)
         
@@ -411,6 +430,7 @@ def build_class(bootstrap_affix):
             if len(false_affixes)>average_word_len:
                 print("Cуперпороговая редукция повторяется большее число раз, чем средняя длина словоформы")
                 break
+            fast=False
         else:
             step += 1
             false_affixes = []
@@ -425,7 +445,7 @@ def build_class(bootstrap_affix):
             if (len(next_bases)<=2):
                 print("Остались две базы очередного вида") 
                 break
-            if reduction < thres_reduction/2:#если редукция < порога редукции/2(порог устойчивости)
+            if reduction < thres_reduction/5:#если редукция < порога редукции/2(порог устойчивости)
                 fast=True
             else:                        
                 fast=False
@@ -433,12 +453,10 @@ def build_class(bootstrap_affix):
     return bases[-1], affixes
 #find_informants()
 #destiny_of_affix(removed_ost,specter, next_bases,voc)
-def rostpriny(removed_ost):
-    print ("Proverka na removed",removed_ost)
-
 bases, affixes = build_class(affix[0])
-rostpriny(removed_ost)
 print("bases and affixes: ",bases, affixes)
+
+
 THRESHOLD_OSTAT=0.5
 
 

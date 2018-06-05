@@ -37,6 +37,7 @@ def main():
     strie = bz2.BZ2File('trie.json.bz2', 'r').read().decode(encoding='utf-8')
     trie = json.loads(strie)
     del strie
+    prefix_trie = json.load(open("prefix_trie.json", encoding="utf-8"))
     print("Безусловные вероятности первых 10 букв:\n========================\n", 
         sorted([(letter,nv) for letter,nv in prob.items()], key=itemgetter(1), reverse=True)[:10])
 
@@ -85,29 +86,23 @@ def build_trie_and_prob(voc):
         current_dict['#'] = n
 
     total = sum([n for n in prob.values()])#84263863
+
     for k,v in prob.items():
         prob[k] = v/total
-
     return trie, prob
 
 def build_prefix_trie(voc):
     # строим дерево префиксов
     trie = {'n':0}
     for w,n in voc.items(): #для каждого слова в списке
-      # переворачиваем слово, читаем слово с конца
         current_dict = trie
         trie['n'] += n
         for letter in w:  # для буквы в слове
-            current_dict = current_dict.setdefault(letter, {'n': 0}) #получить значение из словаря по ключу.
-                                                                     #Автоматически добавляет элемент словаря, если он отсутствует.
+            current_dict = current_dict.setdefault(letter, {'n': 0}) #получить значение из словаря по ключу.                                                                     #Автоматически добавляет элемент словаря, если он отсутствует.
             current_dict['n']+=n
         current_dict['#'] = n
 
-    total = sum([n for n in prob.values()])#84263863
-    for k,v in prob.items():
-        prob[k] = v/total
-
-    return trie, prob
+    return trie
 
 def build_cond_prob(voc, prob, len_search):
     letters = list(prob.keys())
@@ -246,7 +241,7 @@ def word_dfs(node, ending=''):
 # все основы, растущие из данного узла 
 def bases_with_affix(aff):
     global prefix_trie
-    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>1 and voc[b+aff]>1 or prefix_trie(b)[]<100])
+    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>1 and voc[b+aff]>1 or prefix_trie(b)[n]<100])
 
 from bisect import bisect_left
 # суммарная встречаемость основы b с любыми остатками

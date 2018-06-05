@@ -19,10 +19,10 @@ N=5#шлейфовый порог
 trie, voc, words, prob,word_count,average_word_len,bases, affixes, next_bases, false_affixes, removed_ost, specter\
     = None, None, None, None, None, None, None, None, None, None, None, None
 
-
+prefix_trie = None
 
 def main():
-    global trie, words, voc, prob, average_word_len
+    global trie, prefix_trie, words, voc, prob, average_word_len
     voc = load_voc()
     words = sorted(list(voc.keys()))
     word_count = sum([voc[k] for k in voc])
@@ -37,7 +37,7 @@ def main():
     strie = bz2.BZ2File('trie.json.bz2', 'r').read().decode(encoding='utf-8')
     trie = json.loads(strie)
     del strie
-    prefix_trie = json.load(open("prefix_trie.json", encoding="utf-8"))
+    prefix_trie = json.load(open("prefix_trie.json"))
     print("Безусловные вероятности первых 10 букв:\n========================\n", 
         sorted([(letter,nv) for letter,nv in prob.items()], key=itemgetter(1), reverse=True)[:10])
 
@@ -90,19 +90,6 @@ def build_trie_and_prob(voc):
     for k,v in prob.items():
         prob[k] = v/total
     return trie, prob
-
-def build_prefix_trie(voc):
-    # строим дерево префиксов
-    trie = {'n':0}
-    for w,n in voc.items(): #для каждого слова в списке
-        current_dict = trie
-        trie['n'] += n
-        for letter in w:  # для буквы в слове
-            current_dict = current_dict.setdefault(letter, {'n': 0}) #получить значение из словаря по ключу.                                                                     #Автоматически добавляет элемент словаря, если он отсутствует.
-            current_dict['n']+=n
-        current_dict['#'] = n
-
-    return trie
 
 def build_cond_prob(voc, prob, len_search):
     letters = list(prob.keys())
@@ -222,11 +209,19 @@ main()
 affix=[extend_left(extend_right('л', -5, 1.94903926924671), trie, 7)]
 print(affix[0])
 
-# узел trie, соответствующийокончанию aff
+# узел trie, соответствующий окончанию aff
 def affix_node(aff):
     global trie
     current_node = trie
     for char in aff[::-1]:
+        current_node = current_node[char]
+    return current_node
+
+# узел trie, соответствующий префиксу prf
+def prefix_node(prf):
+    global prefix_trie
+    current_node = prefix_trie
+    for char in prf:
         current_node = current_node[char]
     return current_node
 
@@ -237,11 +232,14 @@ def word_dfs(node, ending=''):
         if ch in ['#', 'n']: continue
         result += word_dfs(node[ch], ch+ending)
     return result
-  
+
+def num_prefix(prf):
+    return prefix_node(prf)['n']
+
 # все основы, растущие из данного узла 
 def bases_with_affix(aff):
     global prefix_trie
-    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>1 and voc[b+aff]>1 or prefix_trie(b)[n]<100])
+    return sorted([b for b in word_dfs(affix_node(aff)) if len(b)>2 and voc[b+aff]>1 or num_prefix(b) < 100])
 
 from bisect import bisect_left
 # суммарная встречаемость основы b с любыми остатками

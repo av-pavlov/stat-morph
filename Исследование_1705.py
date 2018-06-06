@@ -16,44 +16,45 @@ N = 5  # шлейфовый порог
 
 trie, voc, words, prob, word_count, average_word_len = None, None, None, None, None, None
 
-prefix_trie = None
+prefix_trie, informants, len_search = None, None, None
 
 
 def main():
-    global trie, prefix_trie, words, voc, prob, average_word_len
+    global trie, prefix_trie, words, voc, prob, average_word_len, informants, len_search
+
+    print("Загружаю словарь...", end='')
     voc = load_voc()
     words = sorted(list(voc.keys()))
     word_count = sum([voc[k] for k in voc])
     average_word_len = sum([len(w) * voc[w] for w in words]) / word_count
     len_search = int(average_word_len * WORD_LEN_COEFF)  # это максимальная разрешенная длина аффикса
-    print(
-        "{} словоформ, {} словоупотреблений, средняя длина слова {} ".format(len(words), word_count, average_word_len))
+    print("{} словоформ, {} словоупотреблений, средняя длина слова {} ".format(len(words), word_count, average_word_len))
 
-    # подсчет безусловных вероятностей букв
-    # trie, prob = build_trie_and_prob(voc)
-
+    # загрузка безусловных вероятностей букв и деревьев
+    print("Загружаю деревья...", end='')
     prob = json.load(open("prob.json", encoding="utf-8"))
     strie = bz2.BZ2File('trie.json.bz2', 'r').read().decode(encoding='utf-8')
     trie = json.loads(strie)
     del strie
     prefix_trie = json.load(open("prefix_trie.json"))
-    print("Безусловные вероятности первых 10 букв:\n========================\n",
-          sorted([(letter, nv) for letter, nv in prob.items()], key=itemgetter(1), reverse=True)[:10])
+    print(', ok')
 
-    # подсчет условных вероятностей букв
+    print("Безусловные вероятности первых 10 букв:\n========================")
+    print(", ".join(map(lambda pair: "{}: {:.4f}".format(*pair),
+                        sorted([(letter, nv) for letter, nv in prob.items()],
+                               key=itemgetter(1),
+                               reverse=True)[:10])))
+
+    print("Подсчитываю условные вероятности букв...", end='')
     cond_prob = build_cond_prob(voc, prob, len_search)
+    print(', ok')
 
     # информанты - это буквы с макс значением КФ в каждой позиции
     informants = find_informants(prob, cond_prob, len_search)
     print("ИНФОРМАНТЫ:\n===================")
     print(informants)
 
-    # отправной аффикс начинаем строить с информанта имеющего max КФ
-    affix = informants[0]
-    affix = extend_right(*affix)
-    affix = extend_left(affix, trie, len_search)
-    print("ОТПРАВНОЙ АФФИКС:\n===================")
-    print(affix)
+
 
 
 def load_voc():
@@ -194,7 +195,7 @@ def extend_left(affix, trie, len_search):
             affix = ch + affix
             current_dict = current_dict[ch]
         else:
-            if (L[0][1] + L[1][1]) / (L[2][1] + L[3][1]) > 2:
+            if (L[0][1] + L[1][1]) / (L[2][1] + L[3][1]) > 2.:
                 affix = ch + affix
                 current_dict = current_dict[ch]
             else:
@@ -252,7 +253,7 @@ def build_freq_bases(b):
 def build_ost(bases):
     global words, voc
     ostat = defaultdict(int)
-    for b in bases:
+    for i,b in enumerate(bases):
         affix_pos = len(b)
         for w in words[bisect_left(words, b):]:
             if not w.startswith(b): break
@@ -266,7 +267,7 @@ def fast_alg(bases, specter, freq_bases, step, del_aff):
     max_ost_val = max(specter.values())
     # те пары к в у которых к больше макс
     inf_zveno = {ost: v for ost, v in specter.items() if v > max_ost_val * 0.5}
-    print("Zveno: ", inf_zveno)
+    print("Звено: ", inf_zveno)
     # дольше нужна сочетаемость с некоторой группой контрольных основ
     # верхнее подмножество баз очередного вида
     next_base_freq = {}
@@ -274,19 +275,20 @@ def fast_alg(bases, specter, freq_bases, step, del_aff):
 
     freq_cur_bases = {b: sum([voc.get(b + ost, 0) for ost in specter]) for b in bases}
     max_freq_cur = max(freq_cur_bases.values())
-    print("Max freq: ", max_freq_cur)
+    print("Макс частотность базы:", max_freq_cur)
     # верхнее подмножество баз очередного вида
     control_bases = [b for b, freq in freq_cur_bases.items() if freq >= max_freq_cur / 3]
     if len(control_bases) == 1:
         lower = [(b, freq) for b, freq in freq_cur_bases.items() if freq < max_freq_cur]
         control_bases.append(max(lower, key=itemgetter(1))[0])
-    print("Control bases", control_bases)
+    print("Контрольные базы:", control_bases)
 
     # Первый критерий принадлежности к парадигме - сочетаемость остатков в звене с основами control_bases
     keep_ost = [ost for ost in inf_zveno if all([b + ost in voc for b in control_bases])]
     removed_ost = [ost for ost in inf_zveno if ost not in keep_ost]
 
-    print("Keep:", keep_ost)
+    print("!!Удалены из звена:", removed_ost)
+    print("Остаются в звене:", keep_ost)
     next_bases = [b for b in bases if all([b + aff in voc for aff in keep_ost]) and
                   freq_cur_bases[b] > step]
     if removed_ost:
@@ -294,7 +296,6 @@ def fast_alg(bases, specter, freq_bases, step, del_aff):
         for x in del_aff:
             del specter[x]
 
-    print("!!!!!!!!!!!Removed ost:", removed_ost)
     return keep_ost
 
 
@@ -353,7 +354,7 @@ def direct_alg(bases, specter, false_affixes):
         return []
     # найти след информант
     informant = corr_func[0][0]
-    print("Информант:", informant)
+    print("Аффикс-кандидат (информант):", informant)
     return [informant]
 
 
@@ -380,9 +381,9 @@ def build_class(bootstrap_affix):
     fast = False
 
     while True:
-        print("\n***", step)
-        pprint("Аффиксы парадигмы:", affixes)
-        rint("Основы {}-го вида: {} шт.".format(step, len(bases[-1])))
+        print("\n*** шаг", step)
+        print("Аффиксы парадигмы:", affixes)
+        print("Основы {}-го вида: {} шт.".format(step, len(bases[-1])))
         print("Спектр остатков {}-го вида: {} шт.".format(step, len(specter[-1])))
 
         if not specter[-1]:  # исчерпаны все остатки в спектре
@@ -417,12 +418,13 @@ def build_class(bootstrap_affix):
 
         if reduction > thres_reduction:  # суперпороговая редукция
             false_affixes += next_affixes
-            print("Суперпороговая редукция, ложные остатки", false_affixes)
+            print("ОТВЕРГАЕТСЯ! Суперпороговая редукция, ложные остатки", false_affixes)
             if len(false_affixes) > average_word_len:
                 print("Cуперпороговая редукция повторяется большее число раз, чем средняя длина словоформы")
                 break
             fast = False
         else:
+            print("ПРИНИМАЕТСЯ!")
             step += 1
             false_affixes = []
             affixes += next_affixes
@@ -445,18 +447,31 @@ def build_class(bootstrap_affix):
 
 main()
 
-affix = [extend_left(extend_right('л', -5, 1.94903926924671), trie, 7)]
-print(affix[0])
+classes = []
+for affix in informants:
+    # отправной аффикс начинаем строить с информанта имеющего max КФ
+    bootstrap_affix = extend_right(*affix)
+    bootstrap_affix = extend_left(bootstrap_affix, trie, len_search)
+    print(bootstrap_affix)
+    if any([c['aff'][0]==bootstrap_affix for c in classes]):
+        print("Аффикс уже обработан!")
+        continue
+    else:
+        print("КЛАСС", len(classes)+1, "\nОТПРАВНОЙ АФФИКС:", bootstrap_affix, "\n============================")
 
+    bases, affixes = build_class(bootstrap_affix)
 
+    while True:
+        first_letter = affixes[0][0]
+        if all([aff.startswith(first_letter) for aff in affixes]):
+            for i, b in enumerate(bases):
+                bases[i] = b + first_letter
+            for i, aff in enumerate(affixes):
+                affixes[i] = aff[1:]
+        else:
+            break
 
-bases, affixes = build_class(affix[0])
-if all(affixes.startswith('а')):
-    print (True)
+    print("Основы: {} шт. {}".format(len(bases), bases))
+    print("Аффиксы: {} шт. {}".format(len(affixes), affixes))
 
-print("Основы: {} шт. {}".format(len(bases), bases))
-print("Аффиксы: {} шт. {}".format(len(affixes), affixes))
-THRESHOLD_OSTAT = 0.5
-
-
-statcomb3
+    classes.append({'b': bases, 'aff': affixes})
